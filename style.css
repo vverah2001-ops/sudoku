@@ -1,0 +1,25 @@
+body {
+    font-family: Arial, sans-serif;
+    text-align: center;
+}
+
+#sudoku-board {
+    display: grid;
+    grid-template-columns: repeat(9, 40px);
+    grid-template-rows: repeat(9, 40px);
+    gap: 2px;
+    margin: 20px auto;
+    width: fit-content;
+}
+
+input {
+    width: 38px;
+    height: 38px;
+    font-size: 20px;
+    text-align: center;
+    border: 1px solid black;
+}
+
+.por-defecto {
+    background-color: lightgray;
+}

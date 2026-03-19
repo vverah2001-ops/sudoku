@@ -123,6 +123,59 @@
     }
     .dot.used { background: #ef4444; }
 
+    /* ---- Score bar ---- */
+    .score-bar {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      margin-bottom: 10px;
+      font-size: 0.85rem;
+      color: #9ca3af;
+    }
+
+    .score-value {
+      font-size: 1.25rem;
+      font-weight: 800;
+      font-variant-numeric: tabular-nums;
+      color: #34d399;
+      min-width: 60px;
+      text-align: center;
+      transition: color 0.2s;
+    }
+
+    .score-value.bump {
+      animation: scoreBump 0.35s ease;
+    }
+
+    @keyframes scoreBump {
+      0%   { transform: scale(1); }
+      40%  { transform: scale(1.35); color: #6ee7b7; }
+      100% { transform: scale(1); }
+    }
+
+    /* Floating +/- points animation */
+    .score-float {
+      position: fixed;
+      font-size: clamp(0.85rem, 3vw, 1.1rem);
+      font-weight: 800;
+      pointer-events: none;
+      z-index: 50;
+      transform: translateX(-50%);
+      animation: floatUp 0.95s ease forwards;
+      text-shadow: 0 1px 4px rgba(0,0,0,0.6);
+    }
+
+    .score-float.positive { color: #34d399; }
+    .score-float.negative { color: #f87171; }
+    .score-float.bonus    { color: #fbbf24; }
+
+    @keyframes floatUp {
+      0%   { opacity: 1;   transform: translateX(-50%) translateY(0px); }
+      70%  { opacity: 1; }
+      100% { opacity: 0;   transform: translateX(-50%) translateY(-52px); }
+    }
+
     /* ---- Board ---- */
     .board-wrap {
       position: relative;
@@ -349,9 +402,38 @@
 
     .modal-icon { font-size: 3rem; margin-bottom: 8px; }
     .modal h2   { font-size: 1.5rem; margin-bottom: 8px; color: #93c5fd; }
-    .modal p    { color: #9ca3af; margin-bottom: 22px; line-height: 1.5; font-size: 0.95rem; }
+    .modal p    { color: #9ca3af; margin-bottom: 10px; line-height: 1.5; font-size: 0.95rem; }
     .modal.gameover { border-color: #ef4444; }
     .modal.gameover h2 { color: #f87171; }
+
+    .modal-score-box {
+      background: #111827;
+      border-radius: 10px;
+      padding: 12px 16px;
+      margin-bottom: 18px;
+      text-align: left;
+    }
+
+    .score-row {
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.85rem;
+      color: #9ca3af;
+      padding: 3px 0;
+    }
+
+    .score-row.total {
+      border-top: 1px solid #374151;
+      margin-top: 6px;
+      padding-top: 8px;
+      font-size: 1rem;
+      font-weight: 700;
+      color: #e2e8f0;
+    }
+
+    .score-row .val { color: #34d399; font-weight: 600; }
+    .score-row.total .val { color: #fbbf24; font-size: 1.15rem; }
+    .score-row .val.neg { color: #f87171; }
   </style>
 </head>
 <body>
@@ -376,6 +458,11 @@
       <div class="dot" id="d1"></div>
       <div class="dot" id="d2"></div>
     </div>
+  </div>
+
+  <div class="score-bar">
+    <span>Score:</span>
+    <div class="score-value" id="scoreDisplay">0</div>
   </div>
 
   <div class="board-wrap">
@@ -410,6 +497,12 @@
     <div class="modal-icon" id="modalIcon"></div>
     <h2 id="modalTitle"></h2>
     <p id="modalText"></p>
+    <div class="modal-score-box" id="modalScoreBox" style="display:none">
+      <div class="score-row"><span>Placement score</span><span class="val" id="msPlacement">0</span></div>
+      <div class="score-row"><span>Time bonus</span><span class="val" id="msTimeBonus">0</span></div>
+      <div class="score-row"><span>Mistake penalty</span><span class="val neg" id="msMistakes">0</span></div>
+      <div class="score-row total"><span>Total</span><span class="val" id="msTotal">0</span></div>
+    </div>
     <button class="btn new-game" id="modalBtn">Play Again</button>
   </div>
 
@@ -473,26 +566,56 @@
     }
 
     // ============================================================
+    //  SCORING HELPERS
+    // ============================================================
+
+    // Count how many valid numbers can go in cell (r,c) given current puzzle state
+    function countCandidates(g, r, c) {
+      let count = 0;
+      for (let n = 1; n <= 9; n++) if (canPlace(g, r, c, n)) count++;
+      return count;
+    }
+
+    // Pre-compute candidate counts for every empty cell in the initial puzzle
+    function computeCellCandidates(puz) {
+      const grid = Array.from({length: 9}, () => Array(9).fill(0));
+      for (let r = 0; r < 9; r++)
+        for (let c = 0; c < 9; c++)
+          if (puz[r][c] === 0) grid[r][c] = countCandidates(puz, r, c);
+      return grid;
+    }
+
+    // Score for placing a number correctly in cell (r,c):
+    //   num (1-9) × candidates (1-9) × diffMult  → rounded
+    const DIFF_MULT    = { easy: 1, medium: 1.5, hard: 2 };
+    const TARGET_TIME  = { easy: 600, medium: 900, hard: 1200 }; // seconds
+    const MISTAKE_PEN  = 150;
+
+    // ============================================================
     //  GAME STATE
     // ============================================================
 
-    let puzzle, solution, userGrid, notes, fixed, selected;
+    let puzzle, solution, userGrid, notes, fixed, cellCandidates, selected;
     let mistakes, timerSec, timerID, over, notesMode, paused;
+    let score, placementScore, diffMult, currentDiff;
 
     function startGame() {
-      const diff = document.getElementById('diffSelect').value;
-      const data = generatePuzzle(diff);
+      currentDiff = document.getElementById('diffSelect').value;
+      const data  = generatePuzzle(currentDiff);
       puzzle   = data.puzzle;
       solution = data.solution;
       userGrid = puzzle.map(r => [...r]);
-      // notes[r][c] = Set of numbers written as hints
       notes    = Array.from({length: 9}, () => Array.from({length: 9}, () => new Set()));
       fixed    = puzzle.map(r => r.map(v => v !== 0));
+      cellCandidates = computeCellCandidates(puzzle);
       selected  = null;
       mistakes  = 0;
       over      = false;
       notesMode = false;
       paused    = false;
+      score         = 0;
+      placementScore = 0;
+      diffMult = DIFF_MULT[currentDiff];
 
       stopTimer();
       timerSec = 0;
@@ -503,6 +626,7 @@
       document.getElementById('pauseBtn').classList.remove('is-paused');
       document.getElementById('pauseBtn').textContent = '⏸ Pause';
       document.getElementById('pauseOverlay').classList.remove('visible');
+      renderScore();
 
       renderBoard();
       renderDots();
@@ -521,6 +645,28 @@
     function renderDots() {
       for (let i = 0; i < 3; i++)
         document.getElementById(`d${i}`).classList.toggle('used', i < mistakes);
+    }
+
+    function renderScore() {
+      const el = document.getElementById('scoreDisplay');
+      el.textContent = score.toLocaleString();
+      el.classList.remove('bump');
+      void el.offsetWidth; // reflow to restart animation
+      el.classList.add('bump');
+    }
+
+    // Show a floating +/- label near the cell
+    function showScoreFloat(r, c, pts, type) {
+      const cellEl = document.querySelector(`.cell[data-r="${r}"][data-c="${c}"]`);
+      if (!cellEl) return;
+      const rect = cellEl.getBoundingClientRect();
+      const el   = document.createElement('div');
+      el.className = `score-float ${type}`;
+      el.textContent = (pts >= 0 ? '+' : '') + pts.toLocaleString();
+      el.style.left = (rect.left + rect.width / 2) + 'px';
+      el.style.top  = (rect.top + window.scrollY) + 'px';
+      document.body.appendChild(el);
+      el.addEventListener('animationend', () => el.remove());
     }
 
     // ============================================================
@@ -627,8 +773,13 @@
       userGrid[r][c] = n;
 
       if (n !== 0 && n !== solution[r][c]) {
+        // ── Wrong answer ──
         mistakes++;
+        score = Math.max(0, score - MISTAKE_PEN);
         renderDots();
+        renderScore();
+        showScoreFloat(r, c, -MISTAKE_PEN, 'negative');
+
         const el = document.querySelector(`.cell[data-r="${r}"][data-c="${c}"]`);
         if (el) {
           el.classList.add('shake');
@@ -640,13 +791,20 @@
           over = true;
           revealSolution();
           setTimeout(() => showModal('gameover', '💀', 'Game Over!',
-            'You made 3 mistakes. The solution has been revealed.'), 500);
+            'You made 3 mistakes. The solution has been revealed.', false), 500);
           return;
         }
       } else if (n !== 0) {
-        // Correct — clear this number from notes in same row, col, and box
+        // ── Correct placement ──
+        // Score = number placed × candidate count × difficulty multiplier
+        const candidates = cellCandidates[r][c] || 1;
+        const pts = Math.round(n * candidates * diffMult);
+        score         += pts;
+        placementScore += pts;
+        renderScore();
+        showScoreFloat(r, c, pts, 'positive');
+
         clearRelatedNotes(r, c, n);
-        // Also clear notes in the cell itself
         notes[r][c].clear();
 
         const el = document.querySelector(`.cell[data-r="${r}"][data-c="${c}"]`);
@@ -662,10 +820,28 @@
       if (checkWin()) {
         stopTimer();
         over = true;
+        // Time bonus: max(0, targetTime - elapsed) × diffMult × 2
+        const timeBonus = Math.max(0, Math.round((TARGET_TIME[currentDiff] - timerSec) * diffMult * 2));
+        score += timeBonus;
+        if (timeBonus > 0) {
+          setTimeout(() => {
+            const boardEl = document.getElementById('board');
+            const rect    = boardEl.getBoundingClientRect();
+            const fl = document.createElement('div');
+            fl.className = 'score-float bonus';
+            fl.textContent = `+${timeBonus.toLocaleString()} time bonus!`;
+            fl.style.left = (rect.left + rect.width / 2) + 'px';
+            fl.style.top  = (rect.top + window.scrollY + rect.height / 2) + 'px';
+            document.body.appendChild(fl);
+            fl.addEventListener('animationend', () => fl.remove());
+          }, 150);
+        }
+        renderScore();
         const m = (timerSec / 60) | 0;
         const s = timerSec % 60;
         setTimeout(() => showModal('win', '🎉', 'Solved!',
-          `Time: ${m}:${String(s).padStart(2,'0')} · Mistakes: ${mistakes}`), 300);
+          `Time: ${m}:${String(s).padStart(2,'0')} · Mistakes: ${mistakes}`,
+          true, placementScore, timeBonus), 400);
       }
     }
 
@@ -763,10 +939,23 @@
     //  MODAL
     // ============================================================
 
-    function showModal(type, icon, title, text) {
+    function showModal(type, icon, title, text, showScore = false, pScore = 0, tBonus = 0) {
       document.getElementById('modalIcon').textContent  = icon;
       document.getElementById('modalTitle').textContent = title;
       document.getElementById('modalText').textContent  = text;
+
+      const box = document.getElementById('modalScoreBox');
+      if (showScore) {
+        const pen = mistakes * MISTAKE_PEN;
+        document.getElementById('msPlacement').textContent = pScore.toLocaleString();
+        document.getElementById('msTimeBonus').textContent = '+' + tBonus.toLocaleString();
+        document.getElementById('msMistakes').textContent  = mistakes > 0 ? '-' + pen.toLocaleString() : '0';
+        document.getElementById('msTotal').textContent     = score.toLocaleString();
+        box.style.display = 'block';
+      } else {
+        box.style.display = 'none';
+      }
+
       const modal = document.getElementById('modal');
       modal.className = `modal ${type}`;
       modal.style.display = 'block';
