@@ -88,6 +88,11 @@
     .btn.check     { background: #065f46; border-color: #10b981; }
     .btn.check:hover { background: #047857; }
 
+    /* Pause button */
+    .btn.pause { background: #1c1917; border-color: #78716c; color: #d6d3d1; }
+    .btn.pause:hover { background: #292524; }
+    .btn.pause.is-paused { background: #78350f; border-color: #f59e0b; color: #fde68a; }
+
     .timer {
       font-size: 1.05rem;
       font-variant-numeric: tabular-nums;
@@ -95,6 +100,7 @@
       min-width: 52px;
       text-align: center;
       font-weight: 600;
+      cursor: pointer;
     }
 
     /* ---- Life dots ---- */
@@ -118,6 +124,10 @@
     .dot.used { background: #ef4444; }
 
     /* ---- Board ---- */
+    .board-wrap {
+      position: relative;
+    }
+
     .board {
       display: grid;
       grid-template-columns: repeat(9, var(--cell));
@@ -141,19 +151,20 @@
       border-right: var(--border-thin);
       border-bottom: var(--border-thin);
       transition: background 0.1s;
+      position: relative;
     }
 
     /* Remove outer right/bottom edges */
     .cell:nth-child(9n)   { border-right: none; }
     .cell:nth-child(n+73) { border-bottom: none; }
 
-    /* Thick box borders — right edge after col 3 and col 6 */
+    /* Thick box borders — right after col 3 and col 6 */
     .cell:nth-child(9n+3),
     .cell:nth-child(9n+6) { border-right: var(--border-thick); }
 
-    /* Thick box borders — bottom edge after row 3 */
+    /* Thick box borders — bottom after row 3 */
     .cell:nth-child(n+19):nth-child(-n+27) { border-bottom: var(--border-thick); }
-    /* Thick box borders — bottom edge after row 6 */
+    /* Thick box borders — bottom after row 6 */
     .cell:nth-child(n+46):nth-child(-n+54) { border-bottom: var(--border-thick); }
 
     .cell.fixed      { background: var(--cell-fixed-bg); }
@@ -162,6 +173,30 @@
     .cell.selected   { background: var(--cell-selected-bg) !important; color: #fff; }
     .cell.related    { background: var(--cell-related-bg); }
     .cell.same-num   { background: var(--cell-same-bg); }
+
+    /* ---- Notes grid inside cell ---- */
+    .cell-notes {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      grid-template-rows: repeat(3, 1fr);
+      width: 100%;
+      height: 100%;
+      padding: clamp(1px, 0.4vw, 3px);
+      gap: 0;
+    }
+
+    .note {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: clamp(0.42rem, 1.3vw, 0.58rem);
+      font-weight: 500;
+      color: transparent; /* hidden by default */
+      line-height: 1;
+    }
+
+    .note.on { color: #94a3b8; }
+    .cell.selected .note.on { color: #bfdbfe; }
 
     @keyframes pop {
       0%  { transform: scale(1); }
@@ -176,6 +211,28 @@
       75%     { transform: translateX(5px); }
     }
     .cell.shake { animation: shake 0.25s ease; }
+
+    /* ---- Pause overlay ---- */
+    .pause-overlay {
+      display: none;
+      position: absolute;
+      inset: 0;
+      background: rgba(10, 15, 28, 0.93);
+      border-radius: 4px;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      z-index: 10;
+      backdrop-filter: blur(3px);
+      -webkit-backdrop-filter: blur(3px);
+    }
+
+    .pause-overlay.visible { display: flex; }
+
+    .pause-overlay .pause-icon { font-size: 3rem; }
+    .pause-overlay p { font-size: 1.1rem; color: #fde68a; font-weight: 700; letter-spacing: 3px; }
+    .pause-overlay small { color: #9ca3af; font-size: 0.8rem; }
 
     /* ---- Number pad ---- */
     .numpad {
@@ -216,6 +273,52 @@
     }
     .num-btn.erase:hover { background: #451515; }
     .num-btn.done { opacity: 0.28; pointer-events: none; }
+
+    /* Tools row — Notes & Pause */
+    .tools-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 7px;
+      margin-top: 7px;
+      width: calc(var(--cell) * 9);
+    }
+
+    .tool-btn {
+      height: clamp(38px, 9vw, 46px);
+      border-radius: 10px;
+      border: 1px solid #374151;
+      background: var(--surface);
+      color: #94a3b8;
+      font-size: clamp(0.75rem, 2.8vw, 0.9rem);
+      font-weight: 600;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      transition: background 0.1s, border-color 0.1s, color 0.1s, transform 0.08s;
+      -webkit-tap-highlight-color: transparent;
+      letter-spacing: 0.5px;
+    }
+
+    .tool-btn:hover, .tool-btn:active {
+      background: #2d3748;
+      transform: scale(0.97);
+    }
+
+    /* Notes active state */
+    .tool-btn.notes-on {
+      background: #1e3a5f;
+      border-color: #3b82f6;
+      color: #60a5fa;
+    }
+
+    /* Pause active state */
+    .tool-btn.is-paused {
+      background: #3f2d00;
+      border-color: #f59e0b;
+      color: #fde68a;
+    }
 
     /* ---- Modal ---- */
     .overlay {
@@ -275,7 +378,14 @@
     </div>
   </div>
 
-  <div class="board" id="board"></div>
+  <div class="board-wrap">
+    <div class="board" id="board"></div>
+    <div class="pause-overlay" id="pauseOverlay">
+      <div class="pause-icon">⏸</div>
+      <p>PAUSED</p>
+      <small>Tap Resume to continue</small>
+    </div>
+  </div>
 
   <div class="numpad" id="numpad">
     <button class="num-btn" data-num="1">1</button>
@@ -290,6 +400,11 @@
     <button class="num-btn erase" data-num="0">Erase</button>
   </div>
 
+  <div class="tools-row">
+    <button class="tool-btn" id="notesBtn">✏️ Notes</button>
+    <button class="tool-btn" id="pauseBtn">⏸ Pause</button>
+  </div>
+
   <div class="overlay" id="overlay"></div>
   <div class="modal" id="modal">
     <div class="modal-icon" id="modalIcon"></div>
@@ -300,7 +415,7 @@
 
   <script>
     // ============================================================
-    //  SUDOKU GENERATOR — backtracking with random fill order
+    //  SUDOKU GENERATOR
     // ============================================================
 
     function shuffle(arr) {
@@ -345,12 +460,9 @@
       const g = Array.from({length: 9}, () => Array(9).fill(0));
       fillGrid(g);
       const solution = g.map(r => [...r]);
-
-      // How many cells to blank out
       const removals = { easy: 36, medium: 47, hard: 56 };
       const puzzle = solution.map(r => [...r]);
       const positions = shuffle(Array.from({length: 81}, (_, i) => i));
-
       let removed = 0;
       for (const pos of positions) {
         if (removed >= removals[difficulty]) break;
@@ -364,7 +476,8 @@
     //  GAME STATE
     // ============================================================
 
-    let puzzle, solution, userGrid, fixed, selected, mistakes, timerSec, timerID, over;
+    let puzzle, solution, userGrid, notes, fixed, selected;
+    let mistakes, timerSec, timerID, over, notesMode, paused;
 
     function startGame() {
       const diff = document.getElementById('diffSelect').value;
@@ -372,15 +485,24 @@
       puzzle   = data.puzzle;
       solution = data.solution;
       userGrid = puzzle.map(r => [...r]);
+      // notes[r][c] = Set of numbers written as hints
+      notes    = Array.from({length: 9}, () => Array.from({length: 9}, () => new Set()));
       fixed    = puzzle.map(r => r.map(v => v !== 0));
-      selected = null;
-      mistakes = 0;
-      over     = false;
+      selected  = null;
+      mistakes  = 0;
+      over      = false;
+      notesMode = false;
+      paused    = false;
 
       stopTimer();
       timerSec = 0;
       renderTimer();
       timerID = setInterval(() => { timerSec++; renderTimer(); }, 1000);
+
+      document.getElementById('notesBtn').classList.remove('notes-on');
+      document.getElementById('pauseBtn').classList.remove('is-paused');
+      document.getElementById('pauseBtn').textContent = '⏸ Pause';
+      document.getElementById('pauseOverlay').classList.remove('visible');
 
       renderBoard();
       renderDots();
@@ -418,12 +540,26 @@
           if (fixed[r][c]) el.classList.add('fixed');
 
           const v = userGrid[r][c];
+          const cellNotes = notes[r][c];
+
           if (v) {
+            // Show the placed number
             el.textContent = v;
             if (!fixed[r][c]) {
               el.classList.add('user-input');
               if (v !== solution[r][c]) el.classList.add('error');
             }
+          } else if (cellNotes.size > 0) {
+            // Show notes grid
+            const grid = document.createElement('div');
+            grid.className = 'cell-notes';
+            for (let n = 1; n <= 9; n++) {
+              const span = document.createElement('span');
+              span.className = 'note' + (cellNotes.has(n) ? ' on' : '');
+              span.textContent = n;
+              grid.appendChild(span);
+            }
+            el.appendChild(grid);
           }
 
           el.addEventListener('click', () => selectCell(r, c));
@@ -455,30 +591,42 @@
         if (sv && userGrid[r][c] === sv) el.classList.add('same-num');
       });
 
-      // Ensure selected is on top of same-num
       const selEl = document.querySelector(`.cell[data-r="${sr}"][data-c="${sc}"]`);
       if (selEl) selEl.classList.add('selected');
     }
 
     function selectCell(r, c) {
-      if (over) return;
+      if (over || paused) return;
       selected = [r, c];
       applyHighlights();
     }
 
     // ============================================================
-    //  INPUT A NUMBER
+    //  INPUT
     // ============================================================
 
     function inputNum(n) {
-      if (!selected || over) return;
+      if (!selected || over || paused) return;
       const [r, c] = selected;
       if (fixed[r][c]) return;
 
+      // ── Notes mode ──
+      if (notesMode) {
+        if (n === 0) {
+          notes[r][c].clear();
+        } else if (userGrid[r][c] === 0) {
+          // Toggle note
+          if (notes[r][c].has(n)) notes[r][c].delete(n);
+          else notes[r][c].add(n);
+        }
+        renderBoard();
+        return;
+      }
+
+      // ── Normal mode ──
       userGrid[r][c] = n;
 
       if (n !== 0 && n !== solution[r][c]) {
-        // Wrong answer
         mistakes++;
         renderDots();
         const el = document.querySelector(`.cell[data-r="${r}"][data-c="${c}"]`);
@@ -496,7 +644,11 @@
           return;
         }
       } else if (n !== 0) {
-        // Correct — animate
+        // Correct — clear this number from notes in same row, col, and box
+        clearRelatedNotes(r, c, n);
+        // Also clear notes in the cell itself
+        notes[r][c].clear();
+
         const el = document.querySelector(`.cell[data-r="${r}"][data-c="${c}"]`);
         if (el) {
           el.classList.add('pop');
@@ -517,6 +669,18 @@
       }
     }
 
+    // Remove a placed number from notes of all cells in same row, col, and box
+    function clearRelatedNotes(row, col, num) {
+      const br = (row / 3 | 0) * 3, bc = (col / 3 | 0) * 3;
+      for (let i = 0; i < 9; i++) {
+        notes[row][i].delete(num);
+        notes[i][col].delete(num);
+      }
+      for (let r = br; r < br + 3; r++)
+        for (let c = bc; c < bc + 3; c++)
+          notes[r][c].delete(num);
+    }
+
     function checkWin() {
       for (let r = 0; r < 9; r++)
         for (let c = 0; c < 9; c++)
@@ -531,9 +695,8 @@
       renderBoard();
     }
 
-    // Check button: temporarily highlight errors
     function checkBoard() {
-      if (over) return;
+      if (over || paused) return;
       let hasError = false;
       document.querySelectorAll('.cell').forEach(el => {
         const r = +el.dataset.r, c = +el.dataset.c;
@@ -543,7 +706,6 @@
         }
       });
       if (!hasError) {
-        // All filled cells so far are correct — positive feedback
         document.querySelectorAll('.cell').forEach(el => {
           el.classList.add('pop');
           el.addEventListener('animationend', () => el.classList.remove('pop'), {once: true});
@@ -551,7 +713,6 @@
       }
     }
 
-    // Dim number buttons once all 9 of that digit are placed correctly
     function updateNumpad() {
       const counts = Array(10).fill(0);
       for (let r = 0; r < 9; r++)
@@ -561,6 +722,41 @@
       document.querySelectorAll('.num-btn:not(.erase)').forEach(btn => {
         btn.classList.toggle('done', counts[+btn.dataset.num] >= 9);
       });
+    }
+
+    // ============================================================
+    //  NOTES TOGGLE
+    // ============================================================
+
+    function toggleNotes() {
+      if (over) return;
+      notesMode = !notesMode;
+      const btn = document.getElementById('notesBtn');
+      btn.classList.toggle('notes-on', notesMode);
+      btn.textContent = notesMode ? '✏️ Notes ON' : '✏️ Notes';
+    }
+
+    // ============================================================
+    //  PAUSE
+    // ============================================================
+
+    function togglePause() {
+      if (over) return;
+      paused = !paused;
+      const btn = document.getElementById('pauseBtn');
+      const overlay = document.getElementById('pauseOverlay');
+
+      if (paused) {
+        stopTimer();
+        overlay.classList.add('visible');
+        btn.classList.add('is-paused');
+        btn.textContent = '▶ Resume';
+      } else {
+        timerID = setInterval(() => { timerSec++; renderTimer(); }, 1000);
+        overlay.classList.remove('visible');
+        btn.classList.remove('is-paused');
+        btn.textContent = '⏸ Pause';
+      }
     }
 
     // ============================================================
@@ -589,16 +785,21 @@
     document.getElementById('newGameBtn').addEventListener('click', startGame);
     document.getElementById('checkBtn').addEventListener('click', checkBoard);
     document.getElementById('modalBtn').addEventListener('click', () => { hideModal(); startGame(); });
+    document.getElementById('notesBtn').addEventListener('click', toggleNotes);
+    document.getElementById('pauseBtn').addEventListener('click', togglePause);
+    // Tap the timer to pause too
+    document.getElementById('timer').addEventListener('click', togglePause);
 
-    // Numpad taps / clicks
     document.getElementById('numpad').addEventListener('click', e => {
       const btn = e.target.closest('.num-btn');
       if (btn) inputNum(+btn.dataset.num);
     });
 
-    // Keyboard support (desktop / Chrome)
     document.addEventListener('keydown', e => {
       if (over) return;
+      if (e.key === 'n' || e.key === 'N') { toggleNotes(); return; }
+      if (e.key === 'p' || e.key === 'P' || e.key === 'Escape') { togglePause(); return; }
+      if (paused) return;
       if (e.key >= '1' && e.key <= '9') { e.preventDefault(); inputNum(+e.key); return; }
       if (e.key === 'Backspace' || e.key === 'Delete' || e.key === '0') { e.preventDefault(); inputNum(0); return; }
       if (!selected) return;
