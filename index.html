@@ -220,7 +220,13 @@
     /* Thick box borders — bottom after row 6 */
     .cell:nth-child(n+46):nth-child(-n+54) { border-bottom: var(--border-thick); }
 
+    /* Chess pattern — base colors, overridden by state classes below */
+    .cell.chess-w { background: #e2e2e2; color: #111827; }
+    .cell.chess-b { background: #1c1c1c; }
+    .cell.chess-w .note.on { color: #334155; }
+
     .cell.fixed      { background: var(--cell-fixed-bg); }
+    .cell.chess-w.fixed { background: #c8c8c8; }
     .cell.user-input { color: var(--text-user); }
     .cell.error      { background: var(--cell-error-bg); color: var(--text-error); }
     .cell.selected   { background: var(--cell-selected-bg) !important; color: #fff; }
@@ -682,6 +688,7 @@
           el.className = 'cell';
           el.dataset.r = r;
           el.dataset.c = c;
+          el.classList.add((r + c) % 2 === 0 ? 'chess-w' : 'chess-b');
 
           if (fixed[r][c]) el.classList.add('fixed');
 
